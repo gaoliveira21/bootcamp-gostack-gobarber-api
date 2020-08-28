@@ -8,6 +8,7 @@ import Notification from '../schemas/Notification';
 
 import CancellationMail from '../jobs/CancellationMail';
 import Queue from '../../lib/Queue';
+import Cache from '../../lib/Cache';
 
 class AppointmentController {
   async store(req, res) {
@@ -73,11 +74,20 @@ class AppointmentController {
       user: provider_id,
     });
 
+    await Cache.invalidatePrefix(`user:${req.userId}:appointments`);
+
     return res.status(201).json(appointment);
   }
 
   async index(req, res) {
     const { page = 1 } = req.query;
+
+    const cacheKey = `user:${req.userId}:appointments:${page}`;
+    const cached = await Cache.get(cacheKey);
+
+    if (cached) {
+      return res.json(cached);
+    }
 
     const appointments = await Appointment.findAll({
       where: {
@@ -103,6 +113,8 @@ class AppointmentController {
         },
       ],
     });
+
+    await Cache.set(cacheKey, appointments);
 
     return res.status(200).json(appointments);
   }
@@ -136,6 +148,8 @@ class AppointmentController {
     Queue.add(CancellationMail.key, {
       appointment,
     });
+
+    await Cache.invalidatePrefix(`user:${req.userId}:appointments`);
 
     return res.status(200).json(appointment);
   }
